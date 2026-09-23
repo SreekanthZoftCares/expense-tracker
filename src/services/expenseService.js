@@ -1,5 +1,7 @@
 import { getExpensesByUser } from "../expenses.js";
+import { getBudget } from "../budgets.js";
 import { formatCurrency } from "../utils/currency.js";
+import { groupBy } from "../utils/groupBy.js";
 
 export function getTotalForUser(userId) {
   const userExpenses = getExpensesByUser(userId);
@@ -8,26 +10,56 @@ export function getTotalForUser(userId) {
 
 export function getSummaryByCategory(userId) {
   const userExpenses = getExpensesByUser(userId);
-  const summary = {};
+  const grouped = groupBy(userExpenses, (e) => e.category);
 
-  for (const expense of userExpenses) {
-    if (!summary[expense.category]) {
-      summary[expense.category] = 0;
+  const summary = {};
+  for (const category in grouped) {
+    summary[category] = grouped[category].reduce((sum, e) => sum + e.amount, 0);
+  }
+  return summary;
+}
+
+export function checkBudgetStatus(userId) {
+  const summary = getSummaryByCategory(userId);
+  const report = [];
+
+  for (const category in summary) {
+    const spent = summary[category];
+    const budget = getBudget(category);
+
+    let status;
+    if (!budget) {
+      status = "no-budget";
+    } else {
+      status = spent > budget.limit ? "over" : "under";
     }
-    summary[expense.category] += expense.amount;
+
+    report.push({
+      category,
+      spent,
+      limit: budget ? budget.limit : null,
+      status,
+    });
   }
 
-  return summary;
+  return report;
 }
 
 export function printReport(userId, userName) {
   const total = getTotalForUser(userId);
   const summary = getSummaryByCategory(userId);
+  const budgetReport = checkBudgetStatus(userId);
 
   console.log(`Expense Report for ${userName}`);
   console.log(`Total: ${formatCurrency(total)}`);
   console.log("By category:");
-  for (const [category, amount] of Object.entries(summary)) {
-    console.log(`  ${category}: ${formatCurrency(amount)}`);
+  for (const category in summary) {
+    console.log(`  ${category}: ${formatCurrency(summary[category])}`);
+  }
+  console.log("Budget status:");
+  for (const entry of budgetReport) {
+    console.log(
+      `  ${entry.category}: ${entry.status} (spent ${formatCurrency(entry.spent)})`,
+    );
   }
 }
